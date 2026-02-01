@@ -96,7 +96,7 @@ const ClientInfoSection: FunctionComponent<Props> = ({ store }) => {
 
 	if (loading) {
 		return (
-			<div style={{ padding: "10px", color: "#888" }}>
+			<div className="jack-lbl-empty">
 				Loading client information...
 			</div>
 		)
@@ -104,7 +104,7 @@ const ClientInfoSection: FunctionComponent<Props> = ({ store }) => {
 
 	if (error) {
 		return (
-			<div style={{ padding: "10px", color: "#f59e0b" }}>
+			<div style={{ color: "var(--color-yellow)" }}>
 				{error}
 			</div>
 		)
@@ -112,23 +112,39 @@ const ClientInfoSection: FunctionComponent<Props> = ({ store }) => {
 
 	if (clients.length === 0) {
 		return (
-			<div style={{ padding: "10px" }}>
-				<div style={{ color: "#888", marginBottom: "8px" }}>
+			<div>
+				<div className="jack-lbl-empty">
 					No active client connections found for this consumer.
 				</div>
-				<div style={{ fontSize: "11px", color: "#666" }}>
+				<div style={{ fontSize: 11, color: "var(--color-element-fg)", opacity: 0.5, marginTop: 4 }}>
 					Clients are matched by subscription to the consumer's delivery or filter subject.
-					Make sure clients are connected and subscribed to receive messages from this consumer.
 				</div>
 			</div>
 		)
 	}
 
 	return (
-		<div>
+		<div className="lyt-v" style={{ gap: 8 }}>
 			{/* Summary */}
-			<div style={{ marginBottom: "10px", fontSize: "12px", color: "#888" }}>
-				{clients.length} client{clients.length !== 1 ? 's' : ''} connected
+			<div style={{
+				display: "flex",
+				alignItems: "center",
+				gap: 8,
+				marginBottom: 4
+			}}>
+				<span style={{
+					backgroundColor: "var(--cmp-select-bg)",
+					color: "var(--cmp-select-fg)",
+					padding: "2px 8px",
+					borderRadius: 3,
+					fontSize: 11,
+					fontWeight: 600
+				}}>
+					{clients.length}
+				</span>
+				<span style={{ fontSize: 12, opacity: 0.7 }}>
+					client{clients.length !== 1 ? 's' : ''} connected
+				</span>
 			</div>
 
 			{/* Client list */}
@@ -138,37 +154,57 @@ const ClientInfoSection: FunctionComponent<Props> = ({ store }) => {
 
 			{/* Pagination */}
 			{totalPages > 1 && (
-				<div style={{ display: "flex", justifyContent: "center", gap: "10px", marginTop: "10px" }}>
+				<div style={{
+					display: "flex",
+					justifyContent: "center",
+					alignItems: "center",
+					gap: 12,
+					marginTop: 8,
+					paddingTop: 8,
+					borderTop: "1px solid var(--cmp-bg)"
+				}}>
 					<button
 						onClick={() => setPage(p => Math.max(0, p - 1))}
 						disabled={page === 0}
 						style={{
-							padding: "4px 8px",
-							backgroundColor: page === 0 ? "#333" : "#555",
-							border: "none",
-							borderRadius: "3px",
-							color: page === 0 ? "#666" : "#fff",
+							padding: "4px 12px",
+							backgroundColor: page === 0 ? "var(--cmp-bg)" : "var(--color-element-bg)",
+							border: "1px solid var(--cmp-bg)",
+							borderRadius: 3,
+							color: page === 0 ? "var(--color-element-fg)" : "var(--cmp-select-bg)",
 							cursor: page === 0 ? "default" : "pointer",
+							opacity: page === 0 ? 0.4 : 1,
+							fontSize: 11,
+							fontWeight: 500,
 						}}
 					>
-						Prev
+						PREV
 					</button>
-					<span style={{ color: "#888", fontSize: "12px", alignSelf: "center" }}>
+					<span style={{
+						fontSize: 11,
+						color: "var(--color-element-fg)",
+						opacity: 0.7,
+						minWidth: 50,
+						textAlign: "center"
+					}}>
 						{page + 1} / {totalPages}
 					</span>
 					<button
 						onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
 						disabled={page >= totalPages - 1}
 						style={{
-							padding: "4px 8px",
-							backgroundColor: page >= totalPages - 1 ? "#333" : "#555",
-							border: "none",
-							borderRadius: "3px",
-							color: page >= totalPages - 1 ? "#666" : "#fff",
+							padding: "4px 12px",
+							backgroundColor: page >= totalPages - 1 ? "var(--cmp-bg)" : "var(--color-element-bg)",
+							border: "1px solid var(--cmp-bg)",
+							borderRadius: 3,
+							color: page >= totalPages - 1 ? "var(--color-element-fg)" : "var(--cmp-select-bg)",
 							cursor: page >= totalPages - 1 ? "default" : "pointer",
+							opacity: page >= totalPages - 1 ? 0.4 : 1,
+							fontSize: 11,
+							fontWeight: 500,
 						}}
 					>
-						Next
+						NEXT
 					</button>
 				</div>
 			)}
@@ -187,7 +223,7 @@ const ClientCard: FunctionComponent<ClientCardProps> = ({ client }) => {
 	const startActivity = dayjs(client.start).format("YYYY-MM-DD HH:mm:ss")
 	const lastActivity = dayjs(client.last_activity).format("YYYY-MM-DD HH:mm:ss")
 	const [lastActivityDelta, isRecentActivity] = getDeltaTime(client.last_activity)
-	const rtt = parseInt(client.rtt) + client.rtt?.slice(-2)
+	const rtt = client.rtt ? (parseInt(client.rtt) + client.rtt?.slice(-2)) : "--"
 	const pending = compactByte(client?.pending_bytes)
 
 	const lang = `${client.lang?.toLowerCase() ?? "--"} v${client.version ?? "--"}`
@@ -203,66 +239,92 @@ const ClientCard: FunctionComponent<ClientCardProps> = ({ client }) => {
 	const bytesInRate = compactByte(client?.nui_in_bytes_sec)
 
 	return (
-		<div style={{
-			padding: "8px",
-			marginBottom: "8px",
-			border: "1px solid #333",
-			borderRadius: "3px",
-			backgroundColor: "#1a1a1a",
+		<div className="jack-lyt-quote" style={{
+			padding: 10,
+			borderRadius: 4,
 			fontSize: 12,
-			fontWeight: 400,
+			display: "flex",
+			flexDirection: "column",
+			gap: 6,
 		}}>
-			{/* Identifier */}
-			<div style={{ display: "flex", gap: 3, alignItems: "center" }}>
+			{/* Header: CID, IP:Port, Language badge */}
+			<div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+				{/* Activity indicator */}
 				<div style={{
-					width: "8px",
-					height: "8px",
+					width: 8,
+					height: 8,
 					borderRadius: "50%",
-					backgroundColor: isRecentActivity ? "var(--color-mint)" : "#575757ff",
-					marginRight: "4px",
+					backgroundColor: isRecentActivity ? "var(--color-mint)" : "var(--cmp-bg)",
+					flexShrink: 0,
 				}} />
+
+				{/* CID and IP */}
 				<div style={{ flex: 1, ...ellipsisStyle }}>
-					<span style={{ fontWeight: 700 }}>{client.cid}</span> / {client.ip}:{client.port}
+					<span style={{ fontWeight: 700, color: "var(--cmp-select-bg)" }}>{client.cid}</span>
+					<span style={{ opacity: 0.5 }}> / </span>
+					<span style={{ opacity: 0.8 }}>{client.ip}:{client.port}</span>
 				</div>
+
+				{/* Language badge */}
 				<div style={{
 					backgroundColor: "var(--cmp-select-bg)",
-					padding: "2px 4px",
-					borderRadius: "2px",
+					color: "var(--cmp-select-fg)",
+					padding: "2px 6px",
+					borderRadius: 3,
 					fontSize: 10,
-					color: "#000"
+					fontWeight: 600,
+					flexShrink: 0,
 				}}>
 					{lang}
 				</div>
 			</div>
 
-			{/* Name */}
+			{/* Client name */}
 			{client.name && (
-				<div style={{ color: "var(--cmp-select-bg)", ...ellipsisStyle }}>{client.name}</div>
+				<div style={{
+					color: "var(--cmp-select-bg)",
+					fontSize: 11,
+					fontWeight: 500,
+					...ellipsisStyle
+				}}>
+					{client.name}
+				</div>
 			)}
 
-			{/* Properties */}
-			<div style={{ display: "flex", flexDirection: "column", gap: "0px" }}>
-				<div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-					<TooltipWrapCmp content={lastActivity}>
-						<ValueCmp
-							title="LAST ACT."
-							value={lastActivityDelta}
-							style={{ color: isRecentActivity ? "var(--cmp-select-bg)" : undefined }}
-						/>
-					</TooltipWrapCmp>
-					<ValueCmp title="START" value={startActivity} />
-					<ValueCmp title="UPTIME" value={client.uptime} />
-					<ValueCmp title="RTT" value={rtt} />
-					<ValueCmp title="SUBS." value={client.subscriptions} />
-					<ValueCmp title="PENDING" value={pending.value + pending.unit} />
-				</div>
+			{/* Stats Row 1: Time-based metrics */}
+			<div style={{
+				display: "grid",
+				gridTemplateColumns: "repeat(6, 1fr)",
+				gap: 4,
+				paddingTop: 4,
+				borderTop: "1px solid var(--cmp-bg)"
+			}}>
+				<TooltipWrapCmp content={lastActivity}>
+					<StatItem
+						label="LAST ACT."
+						value={lastActivityDelta}
+						highlight={isRecentActivity}
+					/>
+				</TooltipWrapCmp>
+				<TooltipWrapCmp content={startActivity}>
+					<StatItem label="START" value={startActivity.split(" ")[1]} />
+				</TooltipWrapCmp>
+				<StatItem label="UPTIME" value={client.uptime} />
+				<StatItem label="RTT" value={rtt} />
+				<StatItem label="SUBS." value={client.subscriptions} />
+				<StatItem label="PENDING" value={`${pending.value}${pending.unit}`} />
+			</div>
 
-				<div style={{ display: "flex", flexWrap: "wrap" }}>
-					<Value2Cmp title="MESS. IN" value={msgsIn} rate={msgsInRate} />
-					<Value2Cmp title="MESS. OUT" value={msgsOut} rate={msgsOutRate} />
-					<Value2Cmp title="DATA IN" value={bytesIn} rate={bytesInRate} />
-					<Value2Cmp title="DATA OUT" value={bytesOut} rate={bytesOutRate} />
-				</div>
+			{/* Stats Row 2: Throughput metrics */}
+			<div style={{
+				display: "grid",
+				gridTemplateColumns: "repeat(4, 1fr)",
+				gap: 4,
+			}}>
+				<ThroughputItem label="MESS. IN" value={msgsIn} rate={msgsInRate} />
+				<ThroughputItem label="MESS. OUT" value={msgsOut} rate={msgsOutRate} />
+				<ThroughputItem label="DATA IN" value={bytesIn} rate={bytesInRate} />
+				<ThroughputItem label="DATA OUT" value={bytesOut} rate={bytesOutRate} />
 			</div>
 		</div>
 	)
@@ -274,36 +336,57 @@ const ellipsisStyle: React.CSSProperties = {
 	whiteSpace: "nowrap"
 }
 
-interface ValueCmpProps {
-	title: string
+interface StatItemProps {
+	label: string
 	value: string | number
-	style?: React.CSSProperties
+	highlight?: boolean
 }
 
-const ValueCmp: FunctionComponent<ValueCmpProps> = ({ title, value, style }) => {
+const StatItem: FunctionComponent<StatItemProps> = ({ label, value, highlight }) => {
 	return (
-		<div style={{ display: "flex", flexDirection: "column", ...style, ...ellipsisStyle }}>
-			<div style={{ color: "#888", fontSize: 10 }}>{title}</div>
-			<div>{value}</div>
+		<div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+			<div style={{
+				fontSize: 9,
+				opacity: 0.5,
+				fontWeight: 500,
+				letterSpacing: "0.02em"
+			}}>
+				{label}
+			</div>
+			<div style={{
+				fontSize: 11,
+				color: highlight ? "var(--cmp-select-bg)" : undefined,
+				fontWeight: highlight ? 600 : 400,
+			}}>
+				{value}
+			</div>
 		</div>
 	)
 }
 
-interface Value2CmpProps {
-	title: string
+interface ThroughputItemProps {
+	label: string
 	value: { value: number; unit: string }
 	rate?: { value: number; unit: string }
-	style?: React.CSSProperties
 }
 
-const Value2Cmp: FunctionComponent<Value2CmpProps> = ({ title, value, rate, style }) => {
+const ThroughputItem: FunctionComponent<ThroughputItemProps> = ({ label, value, rate }) => {
 	return (
-		<div style={{ display: "flex", flexDirection: "column", flex: 1, ...style }}>
-			<div style={{ color: "#888", fontSize: 10 }}>{title}</div>
-			<div>
-				<span>{value.value?.toFixed(1) ?? "--"}</span><span>{value.unit}</span>
-				<span> / </span>
-				<span>{rate?.value?.toFixed(1) ?? "--"}</span><span>{rate?.unit}</span>
+		<div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+			<div style={{
+				fontSize: 9,
+				opacity: 0.5,
+				fontWeight: 500,
+				letterSpacing: "0.02em"
+			}}>
+				{label}
+			</div>
+			<div style={{ fontSize: 11 }}>
+				<span>{value.value?.toFixed(1) ?? "--"}</span>
+				<span style={{ opacity: 0.6 }}>{value.unit}</span>
+				<span style={{ opacity: 0.3 }}> / </span>
+				<span style={{ color: "var(--cmp-select-bg)" }}>{rate?.value?.toFixed(1) ?? "--"}</span>
+				<span style={{ opacity: 0.6 }}>{rate?.unit}</span>
 			</div>
 		</div>
 	)
