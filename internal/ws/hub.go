@@ -3,13 +3,15 @@ package ws
 import (
 	"context"
 	"errors"
+	"sync"
+	"time"
+
 	"github.com/mitchellh/mapstructure"
 	"github.com/nats-io/nats.go"
 	natsConn "github.com/nats-nui/nui/internal/connection"
 	"github.com/nats-nui/nui/internal/metrics"
 	"github.com/nats-nui/nui/pkg/channels"
 	"github.com/nats-nui/nui/pkg/logging"
-	"sync"
 )
 
 type Pool[S Subscription, T Conn[S]] interface {
@@ -35,6 +37,11 @@ type IHub interface {
 	Register(ctx context.Context, clientId, connectionId string, req <-chan *Request, messages chan<- Payload) error
 }
 
+// AuditLogger interface for logging subscription events
+type AuditLogger interface {
+	LogSubscriptionExpiry(userID, subject, reason string) error
+}
+
 type Hub[S Subscription, T Conn[S]] struct {
 	pool                     Pool[S, T]
 	reg                      map[string]*ClientConn[S]
@@ -42,6 +49,7 @@ type Hub[S Subscription, T Conn[S]] struct {
 	l                        logging.Slogger
 	ms                       MetricsService
 	skipLastConnectionStatus bool
+	auditLogger              AuditLogger
 }
 
 func NewHub[S Subscription, T Conn[S]](pool Pool[S, T], ms MetricsService, l logging.Slogger) *Hub[S, T] {
@@ -51,6 +59,32 @@ func NewHub[S Subscription, T Conn[S]](pool Pool[S, T], ms MetricsService, l log
 		ms:   ms,
 		l:    l,
 	}
+}
+
+// SetAuditLogger sets the audit logger for logging subscription events
+func (h *Hub[S, T]) SetAuditLogger(logger AuditLogger) {
+	h.auditLogger = logger
+}
+
+// logSubscriptionExpiry logs a subscription expiry event to audit
+func (h *Hub[S, T]) logSubscriptionExpiry(clientId, subject, reason string) {
+	if h.auditLogger == nil {
+		return
+	}
+	// Get user ID from client connection if available
+	h.connectionMutex.Lock()
+	clientConn, ok := h.reg[clientId]
+	userID := ""
+	if ok {
+		userID = clientConn.UserID
+	}
+	h.connectionMutex.Unlock()
+
+	go func() {
+		if err := h.auditLogger.LogSubscriptionExpiry(userID, subject, reason); err != nil {
+			h.l.Error("failed to log subscription expiry", "error", err)
+		}
+	}()
 }
 
 func NewNatsHub(pool Pool[*nats.Subscription, *natsConn.NatsConn], ms MetricsService, l logging.Slogger) *Hub[*nats.Subscription, *natsConn.NatsConn] {
@@ -90,7 +124,26 @@ func (h *Hub[S, T]) HandleRequests(ctx context.Context, clientId string, req <-c
 
 func (h *Hub[S, T]) tearDownClient(clientId string) {
 	h.disableMetrics(clientId)
-	h.purgeConnection(clientId)
+
+	// Check if session-based cleanup is enabled
+	h.connectionMutex.Lock()
+	clientConn, ok := h.reg[clientId]
+	h.connectionMutex.Unlock()
+
+	if ok && clientConn.SessionBased {
+		// Start grace period timer before cleanup
+		h.l.Info("starting disconnect grace period", "client-id", clientId, "grace-period", DisconnectGracePeriod)
+		clientConn.DisconnectTimer = time.AfterFunc(DisconnectGracePeriod, func() {
+			h.l.Info("grace period expired, cleaning up subscriptions", "client-id", clientId)
+			// Log all subscriptions as expired due to disconnect
+			for _, sub := range clientConn.Subs {
+				h.logSubscriptionExpiry(clientId, sub.Subject, "disconnect")
+			}
+			h.purgeConnection(clientId)
+		})
+	} else {
+		h.purgeConnection(clientId)
+	}
 }
 
 func (h *Hub[S, T]) handleRequestsByType(ctx context.Context, clientId string, r *Request, messages chan<- Payload) error {
@@ -125,13 +178,38 @@ func (h *Hub[S, T]) sendErr(messages chan<- Payload, err error) chan<- Payload {
 	return messages
 }
 
-func (h *Hub[S, T]) HandleSubRequest(_ context.Context, clientId string, subReq *SubsReq, messages chan<- Payload) {
+func (h *Hub[S, T]) HandleSubRequest(ctx context.Context, clientId string, subReq *SubsReq, messages chan<- Payload) {
 	h.l.Info("registering new client ws subscription to subjects", "client-id", clientId, "subjects", subReq.Subjects)
+
+	// Check subscription limit
+	h.connectionMutex.Lock()
+	clientConn, ok := h.reg[clientId]
+	h.connectionMutex.Unlock()
+
+	if ok && !clientConn.CanAddSubscription(len(subReq.Subjects)) {
+		h.l.Warn("subscription limit exceeded", "client-id", clientId, "requested", len(subReq.Subjects), "limit", MaxSubscriptionsPerUser)
+		messages <- &SubExpired{
+			Subject: "",
+			Reason:  "limit",
+		}
+		h.sendErr(messages, errors.New("subscription limit exceeded: max 10 active subscriptions per user"))
+		return
+	}
+
+	// Set subscription options
+	if ok {
+		clientConn.SetSubscriptionOptions(subReq.TTLMinutes, subReq.MaxMessages, subReq.SessionBased)
+	}
+
 	h.purgeSubscriptions(clientId)
 	err := h.registerSubscriptions(clientId, subReq)
 	if err != nil {
 		h.sendErr(messages, err)
+		return
 	}
+
+	// Start TTL checker for this client
+	go h.startTTLChecker(ctx, clientId, messages)
 }
 
 func (h *Hub[S, T]) purgeConnection(clientId string) {
@@ -185,9 +263,20 @@ func (h *Hub[S, T]) registerSubscriptions(clientId string, req *SubsReq) error {
 	if err != nil {
 		return err
 	}
+
+	// Use default values if not specified
+	ttlMinutes := req.TTLMinutes
+	if ttlMinutes <= 0 {
+		ttlMinutes = clientConn.TTLMinutes
+	}
+	maxMessages := req.MaxMessages
+	if maxMessages <= 0 {
+		maxMessages = clientConn.MaxMessages
+	}
+
 	chans := make([]<-chan *nats.Msg, 0)
 	for _, sbj := range req.Subjects {
-		s := NewClientSub[S](sbj)
+		s := NewClientSub[S](sbj, ttlMinutes, maxMessages)
 		sub, err := serverConn.ChanSubscribe(sbj, s.Messages)
 		if err != nil {
 			return err
@@ -196,7 +285,7 @@ func (h *Hub[S, T]) registerSubscriptions(clientId string, req *SubsReq) error {
 		chans = append(chans, s.Messages)
 		clientConn.AddSubscription(s)
 	}
-	go parseToClientMessage(channels.FanIn(10, chans...), clientConn.Messages)
+	go h.parseToClientMessageWithTracking(clientId, channels.FanIn(10, chans...), clientConn.Messages)
 	return nil
 }
 
@@ -320,6 +409,80 @@ func parseToClientMessage(natsMsg <-chan *nats.Msg, clientMgs chan<- Payload) {
 				Headers: msg.Header,
 			}
 			clientMgs <- cm
+		}
+	}
+}
+
+// parseToClientMessageWithTracking forwards messages with message count tracking
+func (h *Hub[S, T]) parseToClientMessageWithTracking(clientId string, natsMsg <-chan *nats.Msg, clientMgs chan<- Payload) {
+	for {
+		select {
+		case msg, ok := <-natsMsg:
+			if !ok {
+				return
+			}
+
+			// Check message limits for this subscription
+			h.connectionMutex.Lock()
+			clientConn, connOk := h.reg[clientId]
+			h.connectionMutex.Unlock()
+
+			if connOk {
+				for i := range clientConn.Subs {
+					sub := &clientConn.Subs[i]
+					if sub.Subject == msg.Subject || matchSubject(sub.Subject, msg.Subject) {
+						if sub.IncrementMessageCount() {
+							// Max messages reached, mark as expired
+							sub.MarkExpired()
+							h.l.Info("subscription max messages reached", "client-id", clientId, "subject", sub.Subject)
+							h.logSubscriptionExpiry(clientId, sub.Subject, "max_messages")
+							select {
+							case clientMgs <- &SubExpired{Subject: sub.Subject, Reason: "max_messages"}:
+							default:
+							}
+						}
+						break
+					}
+				}
+			}
+
+			cm := &NatsMsg{
+				Subject: msg.Subject,
+				Payload: msg.Data,
+				Headers: msg.Header,
+			}
+			clientMgs <- cm
+		}
+	}
+}
+
+// startTTLChecker periodically checks for expired subscriptions
+func (h *Hub[S, T]) startTTLChecker(ctx context.Context, clientId string, messages chan<- Payload) {
+	ticker := time.NewTicker(30 * time.Second) // Check every 30 seconds
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			h.connectionMutex.Lock()
+			clientConn, ok := h.reg[clientId]
+			h.connectionMutex.Unlock()
+
+			if !ok {
+				return
+			}
+
+			expired := clientConn.RemoveExpiredSubscriptions()
+			for _, sub := range expired {
+				h.l.Info("subscription TTL expired", "client-id", clientId, "subject", sub.Subject)
+				h.logSubscriptionExpiry(clientId, sub.Subject, "ttl")
+				select {
+				case messages <- &SubExpired{Subject: sub.Subject, Reason: "ttl"}:
+				default:
+				}
+			}
 		}
 	}
 }

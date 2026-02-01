@@ -19,6 +19,8 @@ export enum MSG_TYPE {
     METRICS_REQ = "metrics_req",
     /** METRICS - server*/
     METRICS_RESP = "metrics_resp",
+    /** SUBSCRIPTION EXPIRED - server */
+    SUB_EXPIRED = "subscription_expired",
     /** ERROR MESSAGE - client server */
     ERROR = "error",
 }
@@ -31,6 +33,14 @@ export interface SocketMessage {
 /** SUBSCRIPTIONS REQUEST - client */
 export type PayloadSub = {
     subjects: string[]
+    ttl_minutes?: number
+    max_messages?: number
+    session_based?: boolean
+}
+/** SUBSCRIPTION EXPIRED - server */
+export type PayloadSubExpired = {
+    subject: string
+    reason: "ttl" | "max_messages" | "disconnect" | "limit"
 }
 /** NATS MESSAGE - server */
 export type PayloadMessage = {
@@ -51,4 +61,4 @@ export type PayloadError = {
 export type PayloadMetrics = any
 
 
-export type Payload = PayloadSub | PayloadMessage | PayloadStatus | PayloadError | PayloadMetrics
+export type Payload = PayloadSub | PayloadSubExpired | PayloadMessage | PayloadStatus | PayloadError | PayloadMetrics

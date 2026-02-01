@@ -1,6 +1,6 @@
 import messagesApi from "@/api/messages"
 import { socketPool } from "@/plugins/SocketService/pool"
-import { MSG_TYPE, PayloadMessage } from "@/plugins/SocketService/types"
+import { MSG_TYPE, PayloadMessage, PayloadSubExpired } from "@/plugins/SocketService/types"
 import cnnSo from "@/stores/connections"
 import { buildMessageDetail } from "@/stores/docs/utils/factory"
 import viewSetup, { ViewStore } from "@/stores/stacks/viewBase"
@@ -14,6 +14,52 @@ import { MessageStore } from "../../message"
 import { ViewState } from "../../viewBase"
 import { buildConnectionMessageSend } from "../utils/factory"
 import { SS_EVENTS } from "@/plugins/SocketService"
+
+// Default values for subscription cleanup
+const DEFAULT_TTL_MINUTES = 15
+const DEFAULT_MAX_MESSAGES = 1000
+
+// Subscription history storage key
+const SUBSCRIPTION_HISTORY_KEY = "nui_subscription_history"
+
+export type SubscriptionHistoryEntry = {
+	subject: string
+	expiredAt: number
+	reason: string
+	connectionId: string
+}
+
+// Load subscription history from localStorage
+function loadSubscriptionHistory(): SubscriptionHistoryEntry[] {
+	try {
+		const data = localStorage.getItem(SUBSCRIPTION_HISTORY_KEY)
+		return data ? JSON.parse(data) : []
+	} catch {
+		return []
+	}
+}
+
+// Save subscription history to localStorage
+function saveSubscriptionHistory(history: SubscriptionHistoryEntry[]) {
+	try {
+		localStorage.setItem(SUBSCRIPTION_HISTORY_KEY, JSON.stringify(history))
+	} catch {
+		// Ignore storage errors
+	}
+}
+
+// Add entry to subscription history
+function addToSubscriptionHistory(entry: SubscriptionHistoryEntry) {
+	const history = loadSubscriptionHistory()
+	// Remove duplicates (same subject and connection)
+	const filtered = history.filter(
+		h => !(h.subject === entry.subject && h.connectionId === entry.connectionId)
+	)
+	// Add new entry at the beginning
+	filtered.unshift(entry)
+	// Keep only last 50 entries
+	saveSubscriptionHistory(filtered.slice(0, 50))
+}
 
 
 
@@ -43,6 +89,9 @@ const setup = {
 
 		/** contatore SUBJECTS ricevuti */
 		stats: <{ [subjects: string]: MessageStat }>{},
+
+		/** subscription history (expired subscriptions) */
+		subscriptionHistory: <SubscriptionHistoryEntry[]>[],
 
 		/** testo per la ricerca */
 		textSearch: <string>null,
@@ -128,6 +177,11 @@ const setup = {
 					payload: atob(payload.payload),
 				})
 			})
+			// Handle subscription expiry notifications
+			ss.emitter.on(MSG_TYPE.SUB_EXPIRED, msg => {
+				const payload = msg as PayloadSubExpired
+				store.handleSubscriptionExpired(payload)
+			})
 			store.sendSubscriptions()
 		},
 		disconnect(_: void, store?: MessagesStore) {
@@ -169,15 +223,92 @@ const setup = {
 				}, 1000)
 			}
 		},
+		/** Handle subscription expired event from backend */
+		handleSubscriptionExpired: (payload: PayloadSubExpired, store?: MessagesStore) => {
+			const reasonText = {
+				ttl: "TTL expired",
+				max_messages: "Max messages reached",
+				disconnect: "Disconnected",
+				limit: "Subscription limit exceeded"
+			}[payload.reason] || payload.reason
+
+			// Add expiry message to the message list
+			const expiredMsg: Message = {
+				type: MESSAGE_TYPE.WARN,
+				subject: `SUBSCRIPTION EXPIRED: ${payload.subject || "all"}`,
+				payload: reasonText,
+				receivedAt: Date.now(),
+			}
+			store.setMessages([...store.state.messages, expiredMsg])
+
+			// If a specific subject expired, mark it as disabled and add to history
+			if (payload.subject) {
+				const subs = store.state.subscriptions?.map(s =>
+					s.subject === payload.subject ? { ...s, disabled: true } : s
+				)
+				if (subs) store.setSubscriptions(subs)
+
+				// Add to history
+				const historyEntry: SubscriptionHistoryEntry = {
+					subject: payload.subject,
+					expiredAt: Date.now(),
+					reason: payload.reason,
+					connectionId: store.state.connectionId,
+				}
+				addToSubscriptionHistory(historyEntry)
+				store.loadSubscriptionHistory()
+			}
+		},
+
+		/** Load subscription history from localStorage */
+		loadSubscriptionHistory: (_: void, store?: MessagesStore) => {
+			const history = loadSubscriptionHistory()
+			// Filter to only show history for this connection
+			const filtered = history.filter(h => h.connectionId === store.state.connectionId)
+			store.setSubscriptionHistory(filtered)
+		},
+
+		/** Re-subscribe to a subject from history */
+		resubscribeFromHistory: (subject: string, store?: MessagesStore) => {
+			const subs = store.state.subscriptions || []
+			// Check if already in subscriptions
+			const existing = subs.find(s => s.subject === subject)
+			if (existing) {
+				// Re-enable it
+				const updated = subs.map(s =>
+					s.subject === subject ? { ...s, disabled: false } : s
+				)
+				store.setSubscriptions(updated)
+			} else {
+				// Add new subscription
+				store.setSubscriptions([...subs, { subject, disabled: false, favorite: false }])
+			}
+			store.sendSubscriptions()
+		},
+
+		/** Clear subscription history for this connection */
+		clearSubscriptionHistory: (_: void, store?: MessagesStore) => {
+			const history = loadSubscriptionHistory()
+			const filtered = history.filter(h => h.connectionId !== store.state.connectionId)
+			saveSubscriptionHistory(filtered)
+			store.setSubscriptionHistory([])
+		},
+
 		/** aggiorno i subjects di questo stack messages */
 		sendSubscriptions: (_: void, store?: MessagesStore) => {
+			// Get TTL and max messages from first active subscription (they share the same options)
+			const activeSub = store.state.subscriptions?.find(s => !s.disabled)
+			const ttlMinutes = activeSub?.ttlMinutes ?? DEFAULT_TTL_MINUTES
+			const maxMessages = activeSub?.maxMessages ?? DEFAULT_MAX_MESSAGES
+			const sessionBased = activeSub?.sessionBased ?? true
+
 			// invio il cambio di subs al web-socket
 			const subjWS = store.state.pause
 				? []
 				: store.state.subscriptions
 					?.filter(s => !!s?.subject && !s.disabled)
 					.map(s => s.subject) ?? []
-			socketPool.getById(store.getSocketServiceId())?.sendSubjects(subjWS)
+			socketPool.getById(store.getSocketServiceId())?.sendSubjects(subjWS, { ttlMinutes, maxMessages, sessionBased })
 
 			// messaggio in lista di cambio subs
 			const msgChangeSubj: Message = {
@@ -246,11 +377,13 @@ const setup = {
 		setFormatsOpen: (formatsOpen: boolean) => ({ formatsOpen }),
 		setStats: (stats: { [subjects: string]: MessageStat }) => ({ stats }),
 		setPause: (pause: boolean) => ({ pause }),
+		setSubscriptionHistory: (subscriptionHistory: SubscriptionHistoryEntry[]) => ({ subscriptionHistory }),
 	},
 
 	onListenerChange: (store: MessagesStore, type: LISTENER_CHANGE) => {
 		if (store._listeners.size == 1 && type == LISTENER_CHANGE.ADD) {
 			store.connect()
+			store.loadSubscriptionHistory()
 		} else if (store._listeners.size == 0) {
 			store.disconnect()
 		}
