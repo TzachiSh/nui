@@ -12,7 +12,6 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/session"
 	"github.com/nats-nui/nui/internal/auth"
-	"github.com/nats-nui/nui/internal/proto"
 	"github.com/nats-nui/nui/pkg/logging"
 	slogfiber "github.com/samber/slog-fiber"
 )

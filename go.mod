@@ -7,6 +7,7 @@ toolchain go1.24.4
 require (
 	github.com/Masterminds/semver/v3 v3.2.1
 	github.com/adrg/xdg v0.4.0
+	github.com/coreos/go-oidc/v3 v3.17.0
 	github.com/dgraph-io/badger/v4 v4.2.0
 	github.com/gavv/httpexpect/v2 v2.16.0
 	github.com/gofiber/contrib/websocket v1.0.0
@@ -21,10 +22,12 @@ require (
 	github.com/stretchr/testify v1.10.0
 	github.com/synadia-io/orbit.go/natssysclient v0.1.1
 	github.com/wailsapp/wails/v2 v2.10.2
+	golang.org/x/oauth2 v0.34.0
 )
 
 require (
 	github.com/antithesishq/antithesis-sdk-go v0.4.3-default-no-op // indirect
+	github.com/go-jose/go-jose/v4 v4.1.3 // indirect
 	github.com/google/go-tpm v0.9.5 // indirect
 	github.com/synadia-io/orbit.go/natsext v0.1.0 // indirect
 )
@@ -104,7 +107,7 @@ require (
 	golang.org/x/sys v0.36.0 // indirect
 	golang.org/x/text v0.29.0 // indirect; indirectgo mod why
 	golang.org/x/time v0.13.0 // indirect
-	google.golang.org/protobuf v1.33.0
+	google.golang.org/protobuf v1.33.0 // indirect
 	gopkg.in/fsnotify.v1 v1.4.7 // indirect
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect

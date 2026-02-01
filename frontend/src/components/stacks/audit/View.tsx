@@ -134,6 +134,7 @@ const AuditRow: FunctionComponent<AuditRowProps> = ({ log }) => {
 							<div><strong>Method:</strong> {log.method}</div>
 							{log.resourceType && <div><strong>Resource:</strong> {log.resourceType}</div>}
 							{log.resourceId && <div><strong>Resource ID:</strong> {log.resourceId}</div>}
+							{log.topic && <div><strong>Topic:</strong> {log.topic}</div>}
 							{log.details && (
 								<div><strong>Details:</strong> <pre>{JSON.stringify(log.details, null, 2)}</pre></div>
 							)}

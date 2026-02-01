@@ -12,6 +12,7 @@ export interface AuditLog {
 	statusCode: number
 	resourceType?: string
 	resourceId?: string
+	topic?: string
 	details?: Record<string, unknown>
 }
 
