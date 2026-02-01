@@ -1,0 +1,86 @@
+.root {
+	position: relative;
+	height: 100%;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--text);
+}
+
+.root.redeye {
+	background-image: url(./../assets/bg4.jpg);
+	background-color: rgba(0, 0, 0, 0.8);
+	background-blend-mode: darken;
+}
+
+.root.boring {
+	background-color: #02131c;
+}
+
+.container {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	padding: 48px;
+	background: rgba(0, 0, 0, 0.6);
+	border-radius: 16px;
+	backdrop-filter: blur(10px);
+	border: 1px solid rgba(255, 255, 255, 0.1);
+	max-width: 400px;
+	width: 90%;
+}
+
+.logo {
+	color: var(--color-primary, #96a6eb);
+	margin-bottom: 16px;
+}
+
+.title {
+	font-family: 'Darker Grotesque', sans-serif;
+	font-size: 48px;
+	font-weight: 800;
+	margin: 0;
+	color: var(--text, #fff);
+}
+
+.subtitle {
+	font-size: 14px;
+	color: rgba(255, 255, 255, 0.6);
+	margin: 8px 0 32px 0;
+}
+
+.loginButton {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 14px 32px;
+	font-size: 16px;
+	font-weight: 600;
+	color: #fff;
+	background: linear-gradient(135deg, #4a6cf7 0%, #3b5bdb 100%);
+	border: none;
+	border-radius: 8px;
+	cursor: pointer;
+	transition: all 0.2s ease;
+	box-shadow: 0 4px 12px rgba(74, 108, 247, 0.3);
+}
+
+.loginButton:hover {
+	transform: translateY(-2px);
+	box-shadow: 0 6px 20px rgba(74, 108, 247, 0.4);
+}
+
+.loginButton:active {
+	transform: translateY(0);
+}
+
+.jumpcloudIcon {
+	width: 20px;
+	height: 20px;
+}
+
+.footer {
+	margin-top: 32px;
+	font-size: 12px;
+	color: rgba(255, 255, 255, 0.4);
+}

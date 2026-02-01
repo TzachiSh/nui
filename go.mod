@@ -7,11 +7,13 @@ toolchain go1.24.4
 require (
 	github.com/Masterminds/semver/v3 v3.2.1
 	github.com/adrg/xdg v0.4.0
+	github.com/coreos/go-oidc/v3 v3.17.0
 	github.com/dgraph-io/badger/v4 v4.2.0
 	github.com/gavv/httpexpect/v2 v2.16.0
 	github.com/gofiber/contrib/websocket v1.0.0
-	github.com/gofiber/fiber/v2 v2.52.5
+	github.com/gofiber/fiber/v2 v2.52.11
 	github.com/google/uuid v1.6.0
+	github.com/joho/godotenv v1.5.1
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/nats-io/nats-server/v2 v2.12.0
 	github.com/nats-io/nats.go v1.45.0
@@ -21,10 +23,12 @@ require (
 	github.com/stretchr/testify v1.10.0
 	github.com/synadia-io/orbit.go/natssysclient v0.1.1
 	github.com/wailsapp/wails/v2 v2.10.2
+	golang.org/x/oauth2 v0.34.0
 )
 
 require (
 	github.com/antithesishq/antithesis-sdk-go v0.4.3-default-no-op // indirect
+	github.com/go-jose/go-jose/v4 v4.1.3 // indirect
 	github.com/google/go-tpm v0.9.5 // indirect
 	github.com/synadia-io/orbit.go/natsext v0.1.0 // indirect
 )

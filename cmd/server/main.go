@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/gofiber/fiber/v2/log"
+	"github.com/joho/godotenv"
 	"github.com/nats-nui/nui/internal/app"
 	"github.com/nats-nui/nui/internal/version"
 	"github.com/nats-nui/nui/pkg/clicontext"
@@ -17,6 +18,8 @@ import (
 var Version string
 
 func main() {
+	// Load .env file if present
+	_ = godotenv.Load()
 
 	version.Set(Version)
 
