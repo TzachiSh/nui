@@ -25,7 +25,10 @@ RUN addgroup -g 1001 nui && \
 # Copy the needed binary from the builder stage
 COPY --from=build_be /cmd/nui-web /cmd/nui-web
 COPY --from=build_fe /frontend/dist /frontend/dist
-RUN chown -R nui:nui /cmd/nui-web /frontend
+
+# Create directories that the app needs to write to
+RUN mkdir -p /proto-schemas && \
+    chown -R nui:nui /cmd/nui-web /frontend /proto-schemas
 
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

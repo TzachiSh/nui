@@ -2,13 +2,18 @@
 
 
 # Backwards compatibility for docker version that run NUI as root user
-# Change ownership of /db if it exists
+# Ensure directories exist and have correct ownership
 if [ ! -d "/db" ]; then
   mkdir -p /db
 fi
 chown -R nui:nui /db
 
-ARGS="--db-path=/db --proto-schemas-path=/protoschemas/default {@}"
+if [ ! -d "/proto-schemas" ]; then
+  mkdir -p /proto-schemas
+fi
+chown -R nui:nui /proto-schemas
+
+ARGS="--db-path=/db --proto-schemas-path=/proto-schemas ${@}"
 
 # Check if the current user UID is 1001 to support running as a different as non-root user
 # also the entrypoint
