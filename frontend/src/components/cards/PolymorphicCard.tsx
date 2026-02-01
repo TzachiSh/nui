@@ -1,6 +1,7 @@
 import CnnDetailView from "@/components/stacks/connections/detail/View"
 import MessagesView from "@/components/stacks/connections/messages/View"
 import { AboutStore } from "@/stores/stacks/about"
+import { AuditStore } from "@/stores/stacks/audit"
 import { BucketsStore } from "@/stores/stacks/buckets"
 import { BucketStore } from "@/stores/stacks/buckets/detail"
 import { CnnListStore } from "@/stores/stacks/connection"
@@ -22,6 +23,7 @@ import { ViewStore } from "@/stores/stacks/viewBase"
 import { DOC_TYPE } from "@/types"
 import { FunctionComponent, useMemo } from "react"
 import AboutView from "../stacks/about/View"
+import AuditView from "../stacks/audit/View"
 import ShortcutView from "../stacks/shortcut/View"
 import BucketDetailView from "../stacks/buckets/detail/View"
 import BucketsListView from "../stacks/buckets/list/ListView"
@@ -102,6 +104,8 @@ const PolymorphicCard: FunctionComponent<DocCmpProps> = ({
 
 			case DOC_TYPE.LOGS:
 				return <LogsView store={view as ViewLogStore} />
+			case DOC_TYPE.AUDIT:
+				return <AuditView store={view as AuditStore} />
 			case DOC_TYPE.ABOUT:
 				return <AboutView store={view as AboutStore} />
 			case DOC_TYPE.HELP:

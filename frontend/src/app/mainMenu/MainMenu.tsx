@@ -4,9 +4,12 @@ import { ClearSession, LoadSession, SaveSession } from "@/utils/session/startup"
 import { useStore } from "@priolo/jon"
 import React, { FunctionComponent } from "react"
 import AboutButton from "./AboutButton"
+import AuditButton from "./AuditButton"
+import LogoutButton from "./LogoutButton"
 import cls from "./MainMenu.module.css"
 import StoreButton from "./StoreButton"
 import { Button } from "@priolo/jack"
+import authSo from "@/stores/auth"
 
 
 
@@ -79,7 +82,11 @@ const MainMenu: FunctionComponent<Props> = ({
 			<EditorIcon style={{ width: 20 }} className="color-fg" />
 		</MenuButton> */}
 
+		{authSo.state.authEnabled && <AuditButton />}
+
 		<AboutButton />
+
+		{authSo.state.authEnabled && <LogoutButton />}
 
 	</div>
 }
