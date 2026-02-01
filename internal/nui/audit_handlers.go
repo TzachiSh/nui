@@ -37,6 +37,12 @@ func AuditMiddleware(auditRepo audit.AuditRepo) fiber.Handler {
 		// Determine action and resource from path and method
 		action, resourceType, resourceID := parseRequest(method, path, c)
 
+		// Extract topic for subscribe actions
+		topic := ""
+		if action == audit.ActionSubscribe {
+			topic = extractTopicsFromBody(c)
+		}
+
 		// Log the action
 		logEntry := audit.AuditLog{
 			Timestamp:    time.Now(),
@@ -49,6 +55,7 @@ func AuditMiddleware(auditRepo audit.AuditRepo) fiber.Handler {
 			StatusCode:   c.Response().StatusCode(),
 			ResourceType: resourceType,
 			ResourceID:   resourceID,
+			Topic:        topic,
 		}
 
 		// Fire and forget - don't block the response
@@ -58,6 +65,29 @@ func AuditMiddleware(auditRepo audit.AuditRepo) fiber.Handler {
 
 		return err
 	}
+}
+
+// extractTopicsFromBody extracts subscription topics from the request body
+func extractTopicsFromBody(c *fiber.Ctx) string {
+	body := c.Body()
+	if len(body) == 0 {
+		return ""
+	}
+
+	var subs []connection.Subscription
+	if err := json.Unmarshal(body, &subs); err != nil {
+		return ""
+	}
+
+	// Collect all active subjects
+	subjects := make([]string, 0, len(subs))
+	for _, sub := range subs {
+		if sub.Subject != "" && !sub.Disabled {
+			subjects = append(subjects, sub.Subject)
+		}
+	}
+
+	return strings.Join(subjects, ", ")
 }
 
 func parseRequest(method, path string, c *fiber.Ctx) (action, resourceType, resourceID string) {

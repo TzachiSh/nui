@@ -49,7 +49,9 @@ func Setup(dbPath, protoschemasPath string, logger logging.Slogger) (*Nui, error
 	}
 	n.CliConnImporter = clicontext.NewImporter(logger)
 	n.MetricsCollector = metrics.NewCollector(n.ConnRepo, connection.NatsBuilder)
-	n.Hub = ws.NewNatsHub(n.ConnPool, n.MetricsCollector, logger)
+	hub := ws.NewNatsHub(n.ConnPool, n.MetricsCollector, logger)
+	hub.SetAuditLogger(n.AuditRepo)
+	n.Hub = hub
 	n.l = logger
 	return n, nil
 }

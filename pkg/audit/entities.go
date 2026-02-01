@@ -30,6 +30,7 @@ const (
 	ActionPurge          = "purge"
 	ActionPublish        = "publish"
 	ActionSubscribe      = "subscribe"
+	ActionUnsubscribe    = "unsubscribe"
 	ActionRequest        = "request"
 	ActionImport         = "import"
 )

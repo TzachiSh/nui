@@ -72,11 +72,28 @@ func (s Error) GetType() string {
 }
 
 type SubsReq struct {
-	Subjects []string `json:"subjects" mapstructure:"subjects"`
+	Subjects     []string `json:"subjects" mapstructure:"subjects"`
+	TTLMinutes   int      `json:"ttl_minutes" mapstructure:"ttl_minutes"`     // Time-to-live in minutes (default: 15)
+	MaxMessages  int      `json:"max_messages" mapstructure:"max_messages"`   // Max messages before auto-unsubscribe (default: 1000)
+	SessionBased bool     `json:"session_based" mapstructure:"session_based"` // Remove on WebSocket disconnect (default: true)
 }
 
 func (s SubsReq) GetType() string {
 	return subReqType
+}
+
+// Subscription expiry notification types
+const (
+	subExpiredType = "subscription_expired"
+)
+
+type SubExpired struct {
+	Subject string `json:"subject"`
+	Reason  string `json:"reason"` // "ttl", "max_messages", "disconnect", "limit"
+}
+
+func (s SubExpired) GetType() string {
+	return subExpiredType
 }
 
 type MetricsReq struct {

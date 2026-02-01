@@ -23,6 +23,8 @@ export enum MSG_TYPE {
     CONSUMER_CLIENTS_REQ = "consumer_clients_req",
     /** CONSUMER CLIENTS - server */
     CONSUMER_CLIENTS_RESP = "consumer_clients_resp",
+    /** SUBSCRIPTION EXPIRED - server */
+    SUB_EXPIRED = "subscription_expired",
     /** ERROR MESSAGE - client server */
     ERROR = "error",
 }
@@ -35,6 +37,14 @@ export interface SocketMessage {
 /** SUBSCRIPTIONS REQUEST - client */
 export type PayloadSub = {
     subjects: string[]
+    ttl_minutes?: number
+    max_messages?: number
+    session_based?: boolean
+}
+/** SUBSCRIPTION EXPIRED - server */
+export type PayloadSubExpired = {
+    subject: string
+    reason: "ttl" | "max_messages" | "disconnect" | "limit"
 }
 /** NATS MESSAGE - server */
 export type PayloadMessage = {
@@ -69,4 +79,4 @@ export type PayloadConsumerClientsResp = {
     error: string
 }
 
-export type Payload = PayloadSub | PayloadMessage | PayloadStatus | PayloadError | PayloadMetrics | PayloadConsumerClientsReq | PayloadConsumerClientsResp
+export type Payload = PayloadSub | PayloadSubExpired | PayloadMessage | PayloadStatus | PayloadError | PayloadMetrics | PayloadConsumerClientsReq | PayloadConsumerClientsResp

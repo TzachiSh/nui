@@ -15,6 +15,7 @@ const AUDIT_COLLECTION = "audit_logs"
 type AuditRepo interface {
 	Log(log AuditLog) error
 	List(filter ListFilter) ([]AuditLog, error)
+	LogSubscriptionExpiry(userID, subject, reason string) error
 }
 
 type ListFilter struct {
@@ -55,6 +56,24 @@ func (r *DocStoreAuditRepo) Log(log AuditLog) error {
 	doc := r.db.DocFromType(log)
 	_, err := r.db.InsertOne(AUDIT_COLLECTION, doc)
 	return err
+}
+
+// LogSubscriptionExpiry logs a subscription expiry event to the audit log
+func (r *DocStoreAuditRepo) LogSubscriptionExpiry(userID, subject, reason string) error {
+	log := AuditLog{
+		Timestamp:    time.Now(),
+		UserID:       userID,
+		Action:       ActionUnsubscribe,
+		Method:       "SYSTEM",
+		Path:         "/ws/subscription/expired",
+		StatusCode:   200,
+		ResourceType: ResourceMessage,
+		Topic:        subject,
+		Details: map[string]interface{}{
+			"reason": reason,
+		},
+	}
+	return r.Log(log)
 }
 
 func (r *DocStoreAuditRepo) List(filter ListFilter) ([]AuditLog, error) {
