@@ -310,10 +310,14 @@ const setup = {
 					.map(s => s.subject) ?? []
 			socketPool.getById(store.getSocketServiceId())?.sendSubjects(subjWS, { ttlMinutes, maxMessages, sessionBased })
 
+			// Calculate expiry time
+			const expiryTime = dayjs().add(ttlMinutes, 'minute').format('HH:mm:ss')
+			const expiryInfo = subjWS.length > 0 ? ` (expires ${expiryTime}, max ${maxMessages} msgs)` : ''
+
 			// messaggio in lista di cambio subs
 			const msgChangeSubj: Message = {
 				type: subjWS.length > 0 ? MESSAGE_TYPE.INFO : MESSAGE_TYPE.WARN,
-				subject: store.state.pause ? "IN PAUSE" : subjWS.length > 0 ? "LISTENING ON SUBJECTS" : "NO SUBJECTS",
+				subject: store.state.pause ? "IN PAUSE" : subjWS.length > 0 ? `LISTENING ON SUBJECTS${expiryInfo}` : "NO SUBJECTS",
 				payload: subjWS.join(", "),
 				receivedAt: Date.now(),
 			}
