@@ -493,3 +493,59 @@ func errorString(err error) string {
 	}
 	return ""
 }
+
+// matchSubject checks if a subscription subject matches a target subject with NATS wildcards
+func matchSubject(subscription, target string) bool {
+	if subscription == target {
+		return true
+	}
+
+	subTokens := splitSubject(subscription)
+	targetTokens := splitSubject(target)
+
+	return matchTokens(subTokens, targetTokens)
+}
+
+func splitSubject(subject string) []string {
+	if subject == "" {
+		return nil
+	}
+	result := make([]string, 0)
+	start := 0
+	for i := 0; i < len(subject); i++ {
+		if subject[i] == '.' {
+			result = append(result, subject[start:i])
+			start = i + 1
+		}
+	}
+	result = append(result, subject[start:])
+	return result
+}
+
+func matchTokens(subTokens, targetTokens []string) bool {
+	subIdx := 0
+	targetIdx := 0
+
+	for subIdx < len(subTokens) && targetIdx < len(targetTokens) {
+		subToken := subTokens[subIdx]
+
+		if subToken == ">" {
+			return targetIdx < len(targetTokens)
+		}
+
+		if subToken == "*" {
+			subIdx++
+			targetIdx++
+			continue
+		}
+
+		if subToken != targetTokens[targetIdx] {
+			return false
+		}
+
+		subIdx++
+		targetIdx++
+	}
+
+	return subIdx == len(subTokens) && targetIdx == len(targetTokens)
+}
