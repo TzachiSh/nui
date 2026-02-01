@@ -1,4 +1,5 @@
 import aboutSetup from "@/stores/stacks/about";
+import auditSetup from "@/stores/stacks/audit";
 import bucketsSetup from "@/stores/stacks/buckets";
 import bucketSetup from "@/stores/stacks/buckets/detail";
 import cnnSetup from "@/stores/stacks/connection";
@@ -55,6 +56,7 @@ export function buildStore(state: Partial<ViewState>, stateSerializzation?: Part
 		[DOC_TYPE.CONSUMER]: consumerSetup,
 
 		[DOC_TYPE.LOGS]: logsSetup,
+		[DOC_TYPE.AUDIT]: auditSetup,
 		[DOC_TYPE.ABOUT]: aboutSetup,
 
 		[DOC_TYPE.HELP]: helpSetup,

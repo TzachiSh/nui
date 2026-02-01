@@ -3,21 +3,29 @@ package nui
 import (
 	"context"
 	"log/slog"
+	"os"
+	"time"
 
 	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/compress"
 	"github.com/gofiber/fiber/v2/middleware/cors"
+	"github.com/gofiber/fiber/v2/middleware/session"
+	"github.com/nats-nui/nui/internal/auth"
+	"github.com/nats-nui/nui/internal/proto"
 	"github.com/nats-nui/nui/pkg/logging"
 	slogfiber "github.com/samber/slog-fiber"
 )
 
 type App struct {
 	*fiber.App
-	l    logging.Slogger
-	Port string
-	nui  *Nui
-	ctx  context.Context
+	l            logging.Slogger
+	Port         string
+	nui          *Nui
+	ctx          context.Context
+	sessionStore *session.Store
+	authHandlers *auth.AuthHandlers
+	authEnabled  bool
 }
 
 func NewServer(port string, nui *Nui, l logging.Slogger, isDesktop bool) *App {
@@ -47,9 +55,34 @@ func NewServer(port string, nui *Nui, l logging.Slogger, isDesktop bool) *App {
 		allowedOrigins = "*"
 	}
 	app.Use(cors.New(cors.Config{
-		AllowOrigins: allowedOrigins,
-		AllowHeaders: "Origin, Content-Type, Accept",
+		AllowOrigins:     allowedOrigins,
+		AllowHeaders:     "Origin, Content-Type, Accept",
+		AllowCredentials: true,
 	}))
+
+	// Initialize session store
+	app.sessionStore = session.New(session.Config{
+		Expiration:     24 * time.Hour,
+		CookieSecure:   false, // Set to true in production with HTTPS
+		CookieHTTPOnly: true,
+		CookieSameSite: "Lax",
+		CookiePath:     "/",
+		KeyLookup:      "cookie:nui_session",
+	})
+
+	// Initialize OIDC auth if configured (web mode only)
+	if !isDesktop && os.Getenv("JUMPCLOUD_CLIENT_ID") != "" {
+		ctx := context.Background()
+		oidcConfig, err := auth.NewOIDCConfig(ctx)
+		if err != nil {
+			l.Error("Failed to initialize OIDC: " + err.Error())
+		} else {
+			app.authHandlers = auth.NewAuthHandlers(oidcConfig, app.sessionStore, nui.AuditRepo)
+			app.authEnabled = true
+			l.Info("OIDC authentication enabled")
+		}
+	}
+
 	app.registerHandlers()
 	return app
 }
@@ -58,7 +91,34 @@ func (a *App) registerHandlers() {
 
 	a.Get("/health", a.handleHealth)
 
+	// Auth routes (always register, even if auth is disabled)
+	if a.authHandlers != nil {
+		a.Get("/auth/login", a.authHandlers.HandleLogin)
+		a.Get("/auth/callback/jumpcloud", a.authHandlers.HandleCallback)
+		a.Get("/auth/logout", a.authHandlers.HandleLogout)
+		a.Get("/api/auth/me", a.authHandlers.HandleMe)
+	} else {
+		// When auth is disabled, /api/auth/me returns unauthenticated status
+		a.Get("/api/auth/me", func(c *fiber.Ctx) error {
+			return c.JSON(fiber.Map{
+				"authenticated": false,
+				"auth_enabled":  false,
+			})
+		})
+	}
+
+	// Apply auth middleware if enabled
+	if a.authEnabled {
+		a.Use(auth.AuthMiddleware(a.sessionStore))
+	}
+
+	// Apply audit middleware
+	a.Use(AuditMiddleware(a.nui.AuditRepo))
+
 	a.Get("/api/about", a.handleAbout)
+
+	// Audit logs endpoint
+	a.Get("/api/audit", a.HandleListAuditLogs)
 
 	a.Get("/api/connection", a.HandleIndexConnections)
 	a.Get("/api/connection/:id", a.HandleGetConnection)
@@ -119,7 +179,9 @@ func (a *App) registerHandlers() {
 	a.Get("/ws/sub", websocket.New(a.HandleWsSub))
 
 	a.Static("/", "./frontend/dist")
-	a.Static("/*", "./frontend/dist/index,html")
+	a.Get("/*", func(c *fiber.Ctx) error {
+		return c.SendFile("./frontend/dist/index.html")
+	})
 
 }
 
