@@ -5,6 +5,7 @@ import "time"
 type AuditLog struct {
 	ID           string                 `json:"id"`
 	Timestamp    time.Time              `json:"timestamp"`
+	TimestampMs  int64                  `json:"timestamp_ms"` // Unix milliseconds for reliable sorting
 	UserID       string                 `json:"user_id"`
 	UserEmail    string                 `json:"user_email"`
 	UserName     string                 `json:"user_name"`
@@ -14,6 +15,7 @@ type AuditLog struct {
 	StatusCode   int                    `json:"status_code"`
 	ResourceType string                 `json:"resource_type,omitempty"`
 	ResourceID   string                 `json:"resource_id,omitempty"`
+	Topic        string                 `json:"topic,omitempty"` // NATS subject for subscribe actions
 	Details      map[string]interface{} `json:"details,omitempty"`
 }
 

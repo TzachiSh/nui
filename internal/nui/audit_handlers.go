@@ -1,11 +1,13 @@
 package nui
 
 import (
+	"encoding/json"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/nats-nui/nui/internal/connection"
 	"github.com/nats-nui/nui/pkg/audit"
 )
 

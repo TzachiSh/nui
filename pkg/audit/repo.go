@@ -1,6 +1,8 @@
 package audit
 
 import (
+	"sort"
+	"strings"
 	"time"
 
 	docstore "github.com/nats-nui/nui/pkg/storage"
@@ -48,6 +50,8 @@ func (r *DocStoreAuditRepo) Log(log AuditLog) error {
 	if log.Timestamp.IsZero() {
 		log.Timestamp = time.Now()
 	}
+	// Set numeric timestamp for reliable sorting
+	log.TimestampMs = log.Timestamp.UnixMilli()
 	doc := r.db.DocFromType(log)
 	_, err := r.db.InsertOne(AUDIT_COLLECTION, doc)
 	return err
@@ -99,29 +103,6 @@ func (r *DocStoreAuditRepo) List(filter ListFilter) ([]AuditLog, error) {
 		q = q.Where(criteria)
 	}
 
-	// Sort by specified field (default: timestamp descending)
-	sortField := filter.SortBy
-	if sortField == "" {
-		sortField = "timestamp"
-	}
-	sortDirection := -1 // descending
-	if !filter.SortDesc {
-		sortDirection = 1 // ascending
-	}
-	q = q.Sort(query.SortOption{Field: sortField, Direction: sortDirection})
-
-	// Apply limit
-	limit := filter.Limit
-	if limit <= 0 {
-		limit = 100
-	}
-	q = q.Limit(limit)
-
-	// Apply offset
-	if filter.Offset > 0 {
-		q = q.Skip(filter.Offset)
-	}
-
 	docs, err := r.db.FindAll(q)
 	if err != nil {
 		return nil, err
@@ -136,7 +117,51 @@ func (r *DocStoreAuditRepo) List(filter ListFilter) ([]AuditLog, error) {
 		logs = append(logs, *log)
 	}
 
+	// Sort in Go for reliable sorting
+	sortField := filter.SortBy
+	if sortField == "" {
+		sortField = "timestamp"
+	}
+	sortLogs(logs, sortField, filter.SortDesc)
+
+	// Apply offset and limit after sorting
+	if filter.Offset > 0 && filter.Offset < len(logs) {
+		logs = logs[filter.Offset:]
+	} else if filter.Offset >= len(logs) {
+		logs = []AuditLog{}
+	}
+
+	limit := filter.Limit
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit < len(logs) {
+		logs = logs[:limit]
+	}
+
 	return logs, nil
+}
+
+func sortLogs(logs []AuditLog, field string, desc bool) {
+	sort.Slice(logs, func(i, j int) bool {
+		var less bool
+		switch field {
+		case "timestamp":
+			less = logs[i].Timestamp.Before(logs[j].Timestamp)
+		case "user_name":
+			less = strings.ToLower(logs[i].UserName) < strings.ToLower(logs[j].UserName)
+		case "user_email":
+			less = strings.ToLower(logs[i].UserEmail) < strings.ToLower(logs[j].UserEmail)
+		case "action":
+			less = strings.ToLower(logs[i].Action) < strings.ToLower(logs[j].Action)
+		default:
+			less = logs[i].Timestamp.Before(logs[j].Timestamp)
+		}
+		if desc {
+			return !less
+		}
+		return less
+	})
 }
 
 func unmarshalAuditDoc(doc *document.Document) (*AuditLog, error) {
