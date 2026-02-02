@@ -2,15 +2,20 @@ package nui
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/nats-nui/nui/internal/ws"
-	"strconv"
-	"strings"
-	"time"
 )
 
 func (a *App) HandleIndexStreams(c *fiber.Ctx) error {
@@ -397,17 +402,34 @@ type SubjectInfo struct {
 }
 
 // HandleAvailableSubjects returns all unique subjects from all JetStream streams
+// or from NATS monitoring API if JetStream is not available
 // GET /api/connection/:connection_id/stream/subjects
 func (a *App) HandleAvailableSubjects(c *fiber.Ctx) error {
 	a.l.Info("HandleAvailableSubjects called", "connection_id", c.Params("connection_id"))
 
-	js, ok, err := a.jsOrFail(c)
-	if !ok {
-		a.l.Error("jsOrFail failed", "error", err)
-		return err
+	subjects := make(map[string]SubjectInfo)
+
+	// Try JetStream first
+	js, ok, _ := a.jsOrFail(c)
+	if ok {
+		subjects = a.getJetStreamSubjects(c, js)
 	}
 
-	// Collect subjects from all streams
+	// If no JetStream subjects, try monitoring API
+	if len(subjects) == 0 {
+		a.l.Info("No JetStream subjects, trying monitoring API")
+		monitoringSubjects := a.getMonitoringSubjects(c)
+		for k, v := range monitoringSubjects {
+			subjects[k] = v
+		}
+	}
+
+	a.l.Info("Returning subjects", "count", len(subjects))
+	return c.JSON(subjectsMapToSlice(subjects))
+}
+
+// getJetStreamSubjects fetches subjects from JetStream streams
+func (a *App) getJetStreamSubjects(c *fiber.Ctx, js jetstream.JetStream) map[string]SubjectInfo {
 	subjects := make(map[string]SubjectInfo)
 
 	// First, get stream names
@@ -420,40 +442,29 @@ func (a *App) HandleAvailableSubjects(c *fiber.Ctx) error {
 			if err != nil {
 				if !errors.Is(err, jetstream.ErrEndOfData) {
 					a.l.Error("ListStreams error", "error", err)
-					return a.logAndFiberError(c, err, 500)
+					return subjects
 				}
-				// End of data - break out of loop
-				a.l.Info("ListStreams complete", "streamCount", len(streamNames))
 				goto processStreams
 			}
 			if !ok {
-				a.l.Info("ListStreams channel closed", "streamCount", len(streamNames))
 				goto processStreams
 			}
-			a.l.Info("Found stream", "name", info.Config.Name)
 			streamNames = append(streamNames, info.Config.Name)
 		}
 	}
 
 processStreams:
-	a.l.Info("Processing streams", "count", len(streamNames))
-
 	// Now fetch full info for each stream
 	for _, streamName := range streamNames {
 		stream, err := js.Stream(c.Context(), streamName)
 		if err != nil {
-			a.l.Error("Failed to get stream", "name", streamName, "error", err)
 			continue
 		}
 
-		// Get full stream info with subject filter to get all subjects
 		info, err := stream.Info(c.Context(), jetstream.WithSubjectFilter(">"))
 		if err != nil {
-			a.l.Error("Failed to get stream info", "name", streamName, "error", err)
 			continue
 		}
-
-		a.l.Info("Stream info", "name", streamName, "configSubjects", info.Config.Subjects, "stateSubjects", len(info.State.Subjects))
 
 		// Get configured subjects from stream config
 		for _, subj := range info.Config.Subjects {
@@ -479,8 +490,139 @@ processStreams:
 		}
 	}
 
-	a.l.Info("Returning subjects", "count", len(subjects))
-	return c.JSON(subjectsMapToSlice(subjects))
+	return subjects
+}
+
+// getMonitoringSubjects fetches active subscriptions from NATS monitoring API
+func (a *App) getMonitoringSubjects(c *fiber.Ctx) map[string]SubjectInfo {
+	subjects := make(map[string]SubjectInfo)
+
+	// Get connection config to find monitoring URL
+	conn, err := a.nui.ConnRepo.GetById(c.Params("connection_id"))
+	if err != nil {
+		a.l.Error("Failed to get connection", "error", err)
+		return subjects
+	}
+
+	// Try to get monitoring URL from metrics config
+	monitoringURL := conn.Metrics.HttpSource.Url
+	if monitoringURL == "" {
+		// Try to derive from host - assume port 8222
+		if len(conn.Hosts) > 0 {
+			host := conn.Hosts[0]
+			// Parse the NATS URL and replace port with 8222
+			monitoringURL = deriveMonitoringURL(host)
+		}
+	}
+
+	if monitoringURL == "" {
+		a.l.Info("No monitoring URL available")
+		return subjects
+	}
+
+	a.l.Info("Querying monitoring API", "url", monitoringURL)
+
+	// Query /connz?subs=true to get all subscriptions
+	connzURL := strings.TrimSuffix(monitoringURL, "/") + "/connz?subs=true"
+	resp, err := http.Get(connzURL)
+	if err != nil {
+		a.l.Error("Failed to query monitoring API", "error", err)
+		return subjects
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		a.l.Error("Monitoring API returned error", "status", resp.StatusCode)
+		return subjects
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		a.l.Error("Failed to read monitoring response", "error", err)
+		return subjects
+	}
+
+	// Parse the response
+	var connzResp ConnzResponse
+	if err := json.Unmarshal(body, &connzResp); err != nil {
+		a.l.Error("Failed to parse monitoring response", "error", err)
+		return subjects
+	}
+
+	// Extract unique subjects from all connections
+	for _, connection := range connzResp.Connections {
+		for _, sub := range connection.SubscriptionsList {
+			// Filter out system subscriptions
+			if isSystemSubject(sub) {
+				continue
+			}
+			if _, exists := subjects[sub]; !exists {
+				subjects[sub] = SubjectInfo{
+					Subject:    sub,
+					StreamName: "core",
+					Type:       "subscription",
+				}
+			}
+		}
+	}
+
+	a.l.Info("Found monitoring subjects", "count", len(subjects))
+	return subjects
+}
+
+// ConnzResponse represents the NATS /connz response
+type ConnzResponse struct {
+	Connections []ConnzConnection `json:"connections"`
+}
+
+type ConnzConnection struct {
+	SubscriptionsList []string `json:"subscriptions_list"`
+}
+
+// deriveMonitoringURL tries to derive monitoring URL from NATS connection URL
+func deriveMonitoringURL(natsURL string) string {
+	// Handle formats: nats://host:port, host:port, nats://user:pass@host:port
+	parsed, err := url.Parse(natsURL)
+	if err != nil {
+		// Try as host:port
+		if strings.Contains(natsURL, ":") {
+			parts := strings.Split(natsURL, ":")
+			if len(parts) >= 1 {
+				return "http://" + parts[0] + ":8222"
+			}
+		}
+		return ""
+	}
+
+	host := parsed.Hostname()
+	if host == "" {
+		return ""
+	}
+
+	return "http://" + host + ":8222"
+}
+
+// isSystemSubject returns true if the subject is a system subject that should be filtered
+func isSystemSubject(subject string) bool {
+	// Filter all subjects starting with $ (system subjects like $SYS, $JS, $KV, $SRV, etc.)
+	if strings.HasPrefix(subject, "$") {
+		return true
+	}
+
+	// Filter internal subjects
+	systemPrefixes := []string{
+		"_INBOX",
+		"_R_",
+		"_STAN",
+	}
+
+	for _, prefix := range systemPrefixes {
+		if strings.HasPrefix(subject, prefix) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func subjectsMapToSlice(subjects map[string]SubjectInfo) []SubjectInfo {
