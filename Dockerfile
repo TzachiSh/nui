@@ -30,6 +30,9 @@ COPY --from=build_fe /frontend/dist /frontend/dist
 RUN mkdir -p /proto-schemas && \
     chown -R nui:nui /cmd/nui-web /frontend /proto-schemas
 
+# Set default proto schemas directory for Docker
+ENV PROTO_SCHEMAS_DIR=/data/proto-schemas
+
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
