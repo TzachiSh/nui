@@ -7,7 +7,7 @@ import viewSetup, { ViewStore } from "@/stores/stacks/viewBase"
 import { DOC_TYPE, Subscription } from "@/types"
 import { MESSAGE_TYPE, Message } from "@/types/Message"
 import { MSG_FORMAT } from "@/utils/editor"
-import { throttle } from "@/utils/time"
+import { debounce, throttle } from "@/utils/time"
 import { LISTENER_CHANGE, mixStores } from "@priolo/jon"
 import dayjs from "dayjs"
 import { MessageStore } from "../../message"
@@ -102,6 +102,9 @@ const setup = {
 
 		pause: false,
 
+		/** internal: track if already connected to prevent duplicate sends on UI moves */
+		_connected: false,
+
 		//#region VIEWBASE
 		//#endregion
 	},
@@ -165,8 +168,18 @@ const setup = {
 
 
 		async connect(_: void, store?: MessagesStore) {
+			// Skip if already connected (prevent duplicate sends on UI moves)
+			if (store.state._connected) {
+				console.log("CONNECT - already connected, skipping")
+				return
+			}
+
 			console.log("CONNECT")
 			const ss = await socketPool.create(store.getSocketServiceId(), store.state.connectionId)
+			if (!ss) return
+
+			store.state._connected = true
+
 			//ss.onOpen = () => store.sendSubscriptions()
 			//ss.onMessage = message => store.addMessage(message)
 			ss.emitter.on(MSG_TYPE.NATS_MESSAGE, msg => {
@@ -182,10 +195,16 @@ const setup = {
 				const payload = msg as PayloadSubExpired
 				store.handleSubscriptionExpired(payload)
 			})
-			store.sendSubscriptions()
+			// Don't send subscriptions on connect - only when user explicitly adds/modifies them
 		},
 		disconnect(_: void, store?: MessagesStore) {
 			console.log("DISCONNECT")
+			store.state._connected = false
+			// Send disconnect request to server to immediately clean up subscriptions
+			const ss = socketPool.getById(store.getSocketServiceId())
+			if (ss) {
+				ss.sendDisconnect()
+			}
 			socketPool.destroy(store.getSocketServiceId())
 		},
 
@@ -385,11 +404,15 @@ const setup = {
 	},
 
 	onListenerChange: (store: MessagesStore, type: LISTENER_CHANGE) => {
+		const debounceKey = `msg-listener::${store.state.uuid}`
 		if (store._listeners.size == 1 && type == LISTENER_CHANGE.ADD) {
+			// Cancel any pending disconnect (e.g., from window move)
+			debounce(debounceKey)
 			store.connect()
 			store.loadSubscriptionHistory()
 		} else if (store._listeners.size == 0) {
-			store.disconnect()
+			// Debounce disconnect to handle window move (unmount/remount)
+			debounce(debounceKey, () => store.disconnect(), 200)
 		}
 	}
 }

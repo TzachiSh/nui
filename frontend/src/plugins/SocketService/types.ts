@@ -11,6 +11,8 @@ export interface SocketOptions {
 export enum MSG_TYPE {
     /** SUBSCRIPTIONS REQUEST - client */
     SUB_REQUEST = "subscriptions_req",
+    /** DISCONNECT REQUEST - client */
+    DISCONNECT_REQ = "disconnect_req",
     /** NATS MESSAGE - server */
     NATS_MESSAGE = "nats_msg",
     /** CONNECTION STATUS - server */

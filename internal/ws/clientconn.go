@@ -109,6 +109,22 @@ func (c *ClientConn[S]) RemoveExpiredSubscriptions() []ClientSub[S] {
 	return expired
 }
 
+// RemoveSubscription removes a subscription by subject and closes its channel
+func (c *ClientConn[S]) RemoveSubscription(subject string) {
+	c.l.Lock()
+	defer c.l.Unlock()
+
+	var active []ClientSub[S]
+	for _, sub := range c.Subs {
+		if sub.Subject == subject {
+			close(sub.Messages)
+		} else {
+			active = append(active, sub)
+		}
+	}
+	c.Subs = active
+}
+
 // SetSubscriptionOptions sets the default options for new subscriptions
 func (c *ClientConn[S]) SetSubscriptionOptions(ttlMinutes, maxMessages int, sessionBased bool) {
 	c.l.Lock()

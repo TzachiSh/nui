@@ -139,6 +139,25 @@ export class SocketService {
 		}
 	}
 
+	/** Send disconnect request to server before closing */
+	sendDisconnect() {
+		logSo.add({
+			type: MESSAGE_TYPE.INFO,
+			title: "WS-CONNECTIONS",
+			body: `send:FE>BE disconnect`,
+		})
+		const msg: SocketMessage = {
+			type: MSG_TYPE.DISCONNECT_REQ,
+			payload: {},
+		}
+		try {
+			const msgStr = JSON.stringify(msg)
+			this.send(msgStr)
+		} catch (err) {
+			logSo.addError(err)
+		}
+	}
+
 	//#region SOCKET EVENT
 
 	handleOpen(_: Event) {
