@@ -211,8 +211,17 @@ func (h *Hub[S, T]) HandleSubRequest(ctx context.Context, clientId string, subRe
 		return
 	}
 
+	// Cancel previous TTL checker if exists
+	if clientConn.TTLCheckerCancel != nil {
+		clientConn.TTLCheckerCancel()
+	}
+
+	// Create new context for TTL checker
+	ttlCtx, ttlCancel := context.WithCancel(ctx)
+	clientConn.TTLCheckerCancel = ttlCancel
+
 	// Start TTL checker for this client
-	go h.startTTLChecker(ctx, clientId, messages)
+	go h.startTTLChecker(ttlCtx, clientId, messages)
 }
 
 func (h *Hub[S, T]) purgeConnection(clientId string) {
@@ -244,6 +253,10 @@ func (h *Hub[S, T]) purgeSubscriptionsLocked(clientId string) {
 }
 
 func (h *Hub[S, T]) purgeClientSubscriptions(clientConn *ClientConn[S]) {
+	if clientConn.ParserCancel != nil {
+		clientConn.ParserCancel()
+		clientConn.ParserCancel = nil
+	}
 	clientConn.UnsubscribeAll()
 }
 
@@ -288,7 +301,17 @@ func (h *Hub[S, T]) registerSubscriptions(clientId string, req *SubsReq) error {
 		chans = append(chans, s.Messages)
 		clientConn.AddSubscription(s)
 	}
-	go h.parseToClientMessageWithTracking(clientId, channels.FanIn(10, chans...), clientConn.Messages)
+
+	// Cancel previous parser if exists
+	if clientConn.ParserCancel != nil {
+		clientConn.ParserCancel()
+	}
+
+	// Create new context for parser
+	parserCtx, parserCancel := context.WithCancel(context.Background())
+	clientConn.ParserCancel = parserCancel
+
+	go h.parseToClientMessageWithTracking(parserCtx, clientId, channels.FanIn(10, chans...), clientConn.Messages)
 	return nil
 }
 
@@ -592,9 +615,11 @@ func parseToClientMessage(natsMsg <-chan *nats.Msg, clientMgs chan<- Payload) {
 }
 
 // parseToClientMessageWithTracking forwards messages with message count tracking
-func (h *Hub[S, T]) parseToClientMessageWithTracking(clientId string, natsMsg <-chan *nats.Msg, clientMgs chan<- Payload) {
+func (h *Hub[S, T]) parseToClientMessageWithTracking(ctx context.Context, clientId string, natsMsg <-chan *nats.Msg, clientMgs chan<- Payload) {
 	for {
 		select {
+		case <-ctx.Done():
+			return
 		case msg, ok := <-natsMsg:
 			if !ok {
 				return

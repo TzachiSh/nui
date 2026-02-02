@@ -32,6 +32,8 @@ type ClientConn[S Subscription] struct {
 	Subs               []ClientSub[S]
 	l                  sync.Mutex
 	MetricsCancel      context.CancelFunc
+	ParserCancel       context.CancelFunc
+	TTLCheckerCancel   context.CancelFunc
 	CachedMetrics      *CachedMetrics
 	TTLMinutes         int  // Default TTL for subscriptions
 	MaxMessages        int  // Default max messages for subscriptions
