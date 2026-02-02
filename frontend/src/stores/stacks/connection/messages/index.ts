@@ -195,7 +195,11 @@ const setup = {
 				const payload = msg as PayloadSubExpired
 				store.handleSubscriptionExpired(payload)
 			})
-			// Don't send subscriptions on connect - only when user explicitly adds/modifies them
+			// Re-send subscriptions if there are active ones (restored from localStorage after refresh)
+			const hasActiveSubscriptions = store.state.subscriptions?.some(s => !s.disabled)
+			if (hasActiveSubscriptions) {
+				store.sendSubscriptions()
+			}
 		},
 		disconnect(_: void, store?: MessagesStore) {
 			console.log("DISCONNECT")

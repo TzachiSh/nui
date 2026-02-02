@@ -146,11 +146,42 @@ func (h *Hub[S, T]) tearDownClient(clientId string) {
 	}
 }
 
+// HandleDisconnectRequest handles explicit disconnect from client (window closed)
+// This immediately cleans up all subscriptions without grace period
+func (h *Hub[S, T]) HandleDisconnectRequest(clientId string) {
+	h.connectionMutex.Lock()
+	clientConn, ok := h.reg[clientId]
+	h.connectionMutex.Unlock()
+
+	if !ok {
+		return
+	}
+
+	// Cancel any existing disconnect timer
+	if clientConn.DisconnectTimer != nil {
+		clientConn.DisconnectTimer.Stop()
+		clientConn.DisconnectTimer = nil
+	}
+
+	h.l.Info("explicit disconnect request, cleaning up immediately", "client-id", clientId)
+
+	// Log all subscriptions as expired due to disconnect
+	for _, sub := range clientConn.Subs {
+		h.logSubscriptionExpiry(clientId, sub.Subject, "disconnect")
+	}
+
+	// Immediately purge all subscriptions
+	h.purgeConnection(clientId)
+}
+
 func (h *Hub[S, T]) handleRequestsByType(ctx context.Context, clientId string, r *Request, messages chan<- Payload) error {
 	switch r.Type {
 	case subReqType:
 		subReq := &SubsReq{}
 		return decodeAndHandleRequest(ctx, clientId, subReq, r.Payload, h.HandleSubRequest, messages)
+	case disconnectType:
+		h.HandleDisconnectRequest(clientId)
+		return nil
 	case metricsReqType:
 		metricsReq := &MetricsReq{}
 		return decodeAndHandleRequest(ctx, clientId, metricsReq, r.Payload, h.HandleMetricsRequest, messages)
@@ -630,31 +661,47 @@ func (h *Hub[S, T]) parseToClientMessageWithTracking(ctx context.Context, client
 			clientConn, connOk := h.reg[clientId]
 			h.connectionMutex.Unlock()
 
+			shouldSend := false // Only send if we find a matching active subscription
 			if connOk {
 				for i := range clientConn.Subs {
 					sub := &clientConn.Subs[i]
 					if sub.Subject == msg.Subject || matchSubject(sub.Subject, msg.Subject) {
+						// Skip if already expired
+						if sub.IsExpired() {
+							break
+						}
 						if sub.IncrementMessageCount() {
-							// Max messages reached, mark as expired
+							// Max messages reached, mark as expired and unsubscribe
 							sub.MarkExpired()
 							h.l.Info("subscription max messages reached", "client-id", clientId, "subject", sub.Subject)
 							h.logSubscriptionExpiry(clientId, sub.Subject, "max_messages")
+							// Unsubscribe from NATS
+							if err := sub.Sub.Unsubscribe(); err != nil {
+								h.l.Error("failed to unsubscribe", "client-id", clientId, "subject", sub.Subject, "error", err)
+							}
+							// Remove subscription from list immediately
+							clientConn.RemoveSubscription(sub.Subject)
 							select {
 							case clientMgs <- &SubExpired{Subject: sub.Subject, Reason: "max_messages"}:
 							default:
 							}
+							break
 						}
+						// Found active subscription, allow sending
+						shouldSend = true
 						break
 					}
 				}
 			}
 
-			cm := &NatsMsg{
-				Subject: msg.Subject,
-				Payload: msg.Data,
-				Headers: msg.Header,
+			if shouldSend {
+				cm := &NatsMsg{
+					Subject: msg.Subject,
+					Payload: msg.Data,
+					Headers: msg.Header,
+				}
+				clientMgs <- cm
 			}
-			clientMgs <- cm
 		}
 	}
 }
