@@ -388,6 +388,109 @@ func findSeekSeq(ctx context.Context, stream jetstream.Stream, info *jetstream.S
 	}
 }
 
+// SubjectInfo represents information about a subject from JetStream streams
+type SubjectInfo struct {
+	Subject      string `json:"subject"`
+	StreamName   string `json:"streamName"`
+	MessageCount uint64 `json:"messageCount,omitempty"`
+	Type         string `json:"type"` // "configured" or "active"
+}
+
+// HandleAvailableSubjects returns all unique subjects from all JetStream streams
+// GET /api/connection/:connection_id/stream/subjects
+func (a *App) HandleAvailableSubjects(c *fiber.Ctx) error {
+	a.l.Info("HandleAvailableSubjects called", "connection_id", c.Params("connection_id"))
+
+	js, ok, err := a.jsOrFail(c)
+	if !ok {
+		a.l.Error("jsOrFail failed", "error", err)
+		return err
+	}
+
+	// Collect subjects from all streams
+	subjects := make(map[string]SubjectInfo)
+
+	// First, get stream names
+	streamNames := make([]string, 0)
+	listener := js.ListStreams(c.Context())
+	for {
+		select {
+		case info, ok := <-listener.Info():
+			err := listener.Err()
+			if err != nil {
+				if !errors.Is(err, jetstream.ErrEndOfData) {
+					a.l.Error("ListStreams error", "error", err)
+					return a.logAndFiberError(c, err, 500)
+				}
+				// End of data - break out of loop
+				a.l.Info("ListStreams complete", "streamCount", len(streamNames))
+				goto processStreams
+			}
+			if !ok {
+				a.l.Info("ListStreams channel closed", "streamCount", len(streamNames))
+				goto processStreams
+			}
+			a.l.Info("Found stream", "name", info.Config.Name)
+			streamNames = append(streamNames, info.Config.Name)
+		}
+	}
+
+processStreams:
+	a.l.Info("Processing streams", "count", len(streamNames))
+
+	// Now fetch full info for each stream
+	for _, streamName := range streamNames {
+		stream, err := js.Stream(c.Context(), streamName)
+		if err != nil {
+			a.l.Error("Failed to get stream", "name", streamName, "error", err)
+			continue
+		}
+
+		// Get full stream info with subject filter to get all subjects
+		info, err := stream.Info(c.Context(), jetstream.WithSubjectFilter(">"))
+		if err != nil {
+			a.l.Error("Failed to get stream info", "name", streamName, "error", err)
+			continue
+		}
+
+		a.l.Info("Stream info", "name", streamName, "configSubjects", info.Config.Subjects, "stateSubjects", len(info.State.Subjects))
+
+		// Get configured subjects from stream config
+		for _, subj := range info.Config.Subjects {
+			if _, exists := subjects[subj]; !exists {
+				subjects[subj] = SubjectInfo{
+					Subject:    subj,
+					StreamName: streamName,
+					Type:       "configured",
+				}
+			}
+		}
+
+		// Get actual subjects with message counts
+		if info.State.Subjects != nil {
+			for subj, count := range info.State.Subjects {
+				subjects[subj] = SubjectInfo{
+					Subject:      subj,
+					StreamName:   streamName,
+					MessageCount: count,
+					Type:         "active",
+				}
+			}
+		}
+	}
+
+	a.l.Info("Returning subjects", "count", len(subjects))
+	return c.JSON(subjectsMapToSlice(subjects))
+}
+
+func subjectsMapToSlice(subjects map[string]SubjectInfo) []SubjectInfo {
+	result := make([]SubjectInfo, 0, len(subjects))
+	for _, info := range subjects {
+		result = append(result, info)
+	}
+	return result
+}
+
 func findSeqInBatch(msgBatch jetstream.MessageBatch, startSeq int, batch int) (uint64, int, bool, error) {
 	neededSeq := uint64(0)
 	msgsCount := 0

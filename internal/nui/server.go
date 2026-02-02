@@ -135,6 +135,7 @@ func (a *App) registerHandlers() {
 	a.Post("/api/connection/:id/request", a.HandleRequest)
 
 	a.Get("/api/connection/:connection_id/stream", a.HandleIndexStreams)
+	a.Get("/api/connection/:connection_id/stream/subjects", a.HandleAvailableSubjects)
 	a.Get("/api/connection/:connection_id/stream/:stream_name", a.HandleShowStream)
 	a.Post("/api/connection/:connection_id/stream", a.HandleCreateStream)
 	a.Post("/api/connection/:connection_id/stream/:stream_name", a.HandleUpdateStream)

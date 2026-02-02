@@ -1,5 +1,6 @@
 import EditSubscriptionRow from "@/components/rows/EditSubscriptionRow"
 import { MessageStat, MessagesState, MessagesStore, SubscriptionHistoryEntry } from "@/stores/stacks/connection/messages"
+import { AvailableSubject } from "@/api/streams"
 import { Subscription } from "@/types"
 import { useStore } from "@priolo/jon"
 import dayjs from "dayjs"
@@ -28,6 +29,7 @@ const SubjectsDialog: FunctionComponent<Props> = ({
 	// HOOKs
 	const [subscriptions, setSubscriptions] = useState<Subscription[]>([])
 	const [filter, setFilter] = useState<string>("")
+	const [availableFilter, setAvailableFilter] = useState<string>("")
 
 	// Advanced options state
 	const [ttlMinutes, setTtlMinutes] = useState<number>(DEFAULT_TTL_MINUTES)
@@ -38,6 +40,8 @@ const SubjectsDialog: FunctionComponent<Props> = ({
 		if (!msgSa.subscriptionsOpen) return
 		const subs = msgSa.subscriptions ?? []
 		setSubscriptions(subs.sort((s1, s2) => s1.subject.localeCompare(s2.subject)))
+		// Fetch available subjects when dialog opens
+		msgSo.fetchAvailableSubjects()
 		return () => { msgSo.setSubscriptionsOpen(false) }
 	}, [msgSa.subscriptionsOpen, msgSa.connectionId])
 
@@ -101,6 +105,16 @@ const SubjectsDialog: FunctionComponent<Props> = ({
 	const handleClearHistory = () => {
 		msgSo.clearSubscriptionHistory()
 	}
+	const handleAvailableSelect = (index: number) => {
+		const subject = filteredAvailable[index].subject
+		if (subscriptions.findIndex(s => s.subject === subject) !== -1) return
+		subscriptions.push({
+			subject,
+			disabled: false,
+			favorite: false,
+		})
+		setSubscriptions([...subscriptions])
+	}
 
 	// RENDER
 	const allCheck = useMemo(() => subscriptions.every(s => !s.disabled), [subscriptions])
@@ -113,6 +127,13 @@ const SubjectsDialog: FunctionComponent<Props> = ({
 	const noStats = !stats || stats.length == 0
 	const history = msgSa.subscriptionHistory || []
 	const noHistory = history.length === 0
+	const filteredAvailable = useMemo(() => {
+		const txt = availableFilter.toLowerCase().trim()
+		return (msgSa.availableSubjects || [])
+			.filter(m => txt.length === 0 || m.subject?.toLowerCase().includes(txt))
+			.sort((s1, s2) => s1.subject.localeCompare(s2.subject))
+	}, [availableFilter, msgSa.availableSubjects])
+	const noAvailable = filteredAvailable.length === 0 && !msgSa.availableSubjectsLoading
 
 	return <Dialog noCloseOnClickParent
 		title={<div style={{ display: "flex", alignItems: "center" }}>
@@ -136,6 +157,31 @@ const SubjectsDialog: FunctionComponent<Props> = ({
 				fnIsVoid={(item) => !(item?.subject) || item.subject.length == 0}
 				RenderRow={EditSubscriptionRow}
 			/>
+
+			<TitleAccordion title="AVAILABLE" open={false}>
+				{msgSa.availableSubjectsLoading ? (
+					<div className={cls.loading}>Loading...</div>
+				) : (
+					<>
+						{!noAvailable && (
+							<FindInput
+								style={{ margin: "5px 0px", flex: 0 }}
+								value={availableFilter}
+								onChange={text => setAvailableFilter(text)}
+							/>
+						)}
+						<List<AvailableSubject>
+							className={cls.list}
+							items={filteredAvailable}
+							onSelect={handleAvailableSelect}
+							RenderRow={AvailableSubjectRow}
+						/>
+						{noAvailable && (
+							<div className={cls.empty}>No JetStream subjects found</div>
+						)}
+					</>
+				)}
+			</TitleAccordion>
 
 			<TitleAccordion title="ADVANCED" open={false}>
 				<div className="jack-lyt-form" style={{ padding: "5px 0" }}>
@@ -255,6 +301,21 @@ const HistoryEntryRow: FunctionComponent<RenderRowBaseProps<SubscriptionHistoryE
 			<div className={cls.row_counter} style={{ color: "var(--color-yellow)" }}>{reasonText}</div>
 			<div style={{ flex: 1 }} />
 			<div className={cls.row_time}>{time}</div>
+		</div>
+	</div>
+}
+
+const AvailableSubjectRow: FunctionComponent<RenderRowBaseProps<AvailableSubject>> = ({
+	item,
+}) => {
+	return <div className={cls.row}>
+		<div className={cls.row_sbj}>{item.subject}</div>
+		<div style={{ display: "flex" }}>
+			<div className={cls.row_counter} style={{ color: "var(--color-cyan)" }}>{item.streamName}</div>
+			<div style={{ flex: 1 }} />
+			{item.messageCount !== undefined && item.messageCount > 0 && (
+				<div className={cls.row_time}>{item.messageCount} msgs</div>
+			)}
 		</div>
 	</div>
 }

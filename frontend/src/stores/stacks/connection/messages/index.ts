@@ -1,4 +1,5 @@
 import messagesApi from "@/api/messages"
+import streamsApi, { AvailableSubject } from "@/api/streams"
 import { socketPool } from "@/plugins/SocketService/pool"
 import { MSG_TYPE, PayloadMessage, PayloadSubExpired } from "@/plugins/SocketService/types"
 import cnnSo from "@/stores/connections"
@@ -92,6 +93,10 @@ const setup = {
 
 		/** subscription history (expired subscriptions) */
 		subscriptionHistory: <SubscriptionHistoryEntry[]>[],
+
+		/** available subjects from JetStream streams */
+		availableSubjects: <AvailableSubject[]>[],
+		availableSubjectsLoading: false,
 
 		/** testo per la ricerca */
 		textSearch: <string>null,
@@ -317,6 +322,20 @@ const setup = {
 			store.setSubscriptionHistory([])
 		},
 
+		/** Fetch available subjects from JetStream streams */
+		async fetchAvailableSubjects(_: void, store?: MessagesStore) {
+			store.setAvailableSubjectsLoading(true)
+			try {
+				const subjects = await streamsApi.availableSubjects(
+					store.state.connectionId,
+					{ store, manageAbort: true }
+				)
+				store.setAvailableSubjects(subjects ?? [])
+			} finally {
+				store.setAvailableSubjectsLoading(false)
+			}
+		},
+
 		/** aggiorno i subjects di questo stack messages */
 		sendSubscriptions: (_: void, store?: MessagesStore) => {
 			// Get TTL and max messages from first active subscription (they share the same options)
@@ -405,6 +424,8 @@ const setup = {
 		setStats: (stats: { [subjects: string]: MessageStat }) => ({ stats }),
 		setPause: (pause: boolean) => ({ pause }),
 		setSubscriptionHistory: (subscriptionHistory: SubscriptionHistoryEntry[]) => ({ subscriptionHistory }),
+		setAvailableSubjects: (availableSubjects: AvailableSubject[]) => ({ availableSubjects }),
+		setAvailableSubjectsLoading: (availableSubjectsLoading: boolean) => ({ availableSubjectsLoading }),
 	},
 
 	onListenerChange: (store: MessagesStore, type: LISTENER_CHANGE) => {

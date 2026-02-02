@@ -19,3 +19,16 @@
 .row_counter {}
 
 .row_time {}
+
+.loading {
+	padding: 10px;
+	text-align: center;
+	color: var(--color-fg-2);
+	font-style: italic;
+}
+
+.empty {
+	padding: 10px;
+	text-align: center;
+	color: var(--color-fg-2);
+}

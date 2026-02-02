@@ -82,6 +82,19 @@ function _error(connectionId: string, opt?: CallOptions): Promise<StreamInfo[]> 
 	return ajax.get(`connection/${connectionId}/stream_error`, null, opt)
 }
 
+/** Available subject from JetStream streams */
+export type AvailableSubject = {
+	subject: string
+	streamName: string
+	messageCount?: number
+	type: "configured" | "active"
+}
+
+/** Get all available subjects from JetStream streams */
+function availableSubjects(connectionId: string, opt?: CallOptions): Promise<AvailableSubject[]> {
+	return ajax.get(`connection/${connectionId}/stream/subjects`, null, opt)
+}
+
 
 const api = {
 	_error,
@@ -93,5 +106,6 @@ const api = {
 	purge,
 	messages,
 	messageRemove,
+	availableSubjects,
 }
 export default api
