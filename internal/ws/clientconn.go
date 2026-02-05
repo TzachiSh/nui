@@ -13,17 +13,19 @@ const MaxSubscriptionsPerUser = 10
 const DisconnectGracePeriod = 30 * time.Second
 
 type ClientConn[S Subscription] struct {
-	ConnectionId    string
-	Req             <-chan *Request
-	Messages        chan<- Payload
-	Subs            []ClientSub[S]
-	l               sync.Mutex
-	MetricsCancel   context.CancelFunc
-	TTLMinutes      int  // Default TTL for subscriptions
-	MaxMessages     int  // Default max messages for subscriptions
-	SessionBased    bool // Whether to remove subscriptions on disconnect
-	DisconnectTimer *time.Timer
-	UserID          string // For tracking per-user limits
+	ConnectionId     string
+	Req              <-chan *Request
+	Messages         chan<- Payload
+	Subs             []ClientSub[S]
+	l                sync.Mutex
+	MetricsCancel    context.CancelFunc
+	ParserCancel     context.CancelFunc
+	TTLCheckerCancel context.CancelFunc
+	TTLMinutes       int  // Default TTL for subscriptions
+	MaxMessages      int  // Default max messages for subscriptions
+	SessionBased     bool // Whether to remove subscriptions on disconnect
+	DisconnectTimer  *time.Timer
+	UserID           string // For tracking per-user limits
 }
 
 func (c *ClientConn[S]) UnsubscribeAll() {
@@ -88,6 +90,22 @@ func (c *ClientConn[S]) RemoveExpiredSubscriptions() []ClientSub[S] {
 
 	c.Subs = active
 	return expired
+}
+
+// RemoveSubscription removes a subscription by subject and closes its channel
+func (c *ClientConn[S]) RemoveSubscription(subject string) {
+	c.l.Lock()
+	defer c.l.Unlock()
+
+	var active []ClientSub[S]
+	for _, sub := range c.Subs {
+		if sub.Subject == subject {
+			close(sub.Messages)
+		} else {
+			active = append(active, sub)
+		}
+	}
+	c.Subs = active
 }
 
 // SetSubscriptionOptions sets the default options for new subscriptions

@@ -3,8 +3,9 @@ package ws
 import "time"
 
 const (
-	subReqType  = "subscriptions_req"
-	natsMsgType = "nats_msg"
+	subReqType     = "subscriptions_req"
+	natsMsgType    = "nats_msg"
+	disconnectType = "disconnect_req"
 
 	connectionStatusType = "connection_status"
 
@@ -77,6 +78,13 @@ type SubsReq struct {
 
 func (s SubsReq) GetType() string {
 	return subReqType
+}
+
+// DisconnectReq is sent by client when explicitly closing the window
+type DisconnectReq struct{}
+
+func (d DisconnectReq) GetType() string {
+	return disconnectType
 }
 
 // Subscription expiry notification types
