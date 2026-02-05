@@ -1,0 +1,26 @@
+{
+  "agents": [
+    {
+      "agent_id": "a1bb290",
+      "agent_type": "oh-my-claudecode:researcher",
+      "started_at": "2026-02-01T15:07:07.441Z",
+      "parent_mode": "none",
+      "status": "failed",
+      "completed_at": "2026-02-01T15:09:01.716Z",
+      "duration_ms": 114275
+    },
+    {
+      "agent_id": "ac50084",
+      "agent_type": "oh-my-claudecode:explore-medium",
+      "started_at": "2026-02-01T15:07:11.940Z",
+      "parent_mode": "none",
+      "status": "failed",
+      "completed_at": "2026-02-01T15:09:22.723Z",
+      "duration_ms": 130783
+    }
+  ],
+  "total_spawned": 2,
+  "total_completed": 0,
+  "total_failed": 2,
+  "last_updated": "2026-02-01T15:09:22.723Z"
+}
